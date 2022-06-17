@@ -51,7 +51,7 @@ DEBUG = True
 
 
 def log(msg="", indent=0, prefix="> "):
-    m = "{}{}{}".format("    " * indent, prefix, msg, )
+    m = f'{"    " * indent}{prefix}{msg}'
     if(DEBUG):
         print(m)
 
@@ -108,22 +108,19 @@ class FastOBJReader():
         def f(l):
             a = l.split()[1:]
             ls = map(int, a)
-            return tuple([i - 1 for i in ls])
+            return tuple(i - 1 for i in ls)
         
         def fn(l):
             a = l.split()[1:]
             ls = [i.split('/') for i in a]
-            f = []
-            for i, p in enumerate(ls):
-                f.append(int(p[0]) - 1)
-            return f
+            return [int(p[0]) - 1 for p in ls]
         
         def ftn(l):
             a = l.split()[1:]
             ls = [i.split('/') for i in a]
             f = []
             t = []
-            for i, p in enumerate(ls):
+            for p in ls:
                 f.append(int(p[0]) - 1)
                 t.append(int(p[1]) - 1)
             return f, t
@@ -137,7 +134,7 @@ class FastOBJReader():
                 v = l[i:i + 8]
                 c = (int(v[2:4], 16) / 255, int(v[4:6], 16) / 255, int(v[6:8], 16) / 255)
                 r.append(c)
-                m.append(int(v[0:2], 16) / 255)
+                m.append(int(v[:2], 16) / 255)
             return r, m
         
         def v_vc_ext(l):
@@ -145,9 +142,9 @@ class FastOBJReader():
             v = tuple(map(float, a))
             p = v[:3]
             c = v[3:]
-            if(use_vcols_ext_with_gamma):
+            if use_vcols_ext_with_gamma:
                 g = 1 / 2.2
-                c = tuple([i ** g for i in c])
+                c = tuple(i ** g for i in c)
             return p + c
         
         groups = {}
@@ -424,10 +421,8 @@ class FastOBJWriter():
                     b += c[2]
                 
                 def limit(v):
-                    if(v < 0.0):
-                        v = 0.0
-                    if(v > 1.0):
-                        v = 1.0
+                    v = max(v, 0.0)
+                    v = min(v, 1.0)
                     return v
                 
                 rgbf.append((limit(r / l), limit(g / l), limit(b / l)))
@@ -471,10 +466,8 @@ class FastOBJWriter():
                     b += c[2]
                 
                 def limit(v):
-                    if(v < 0):
-                        v = 0
-                    if(v > 255):
-                        v = 255
+                    v = max(v, 0)
+                    v = min(v, 255)
                     return v
                 
                 rgb8 = (limit(int((r / l) * 255.0)), limit(int((g / l) * 255.0)), limit(int((b / l) * 255.0)))
@@ -657,10 +650,10 @@ class ExportFastOBJ(Operator, ExportHelper):
     
     def execute(self, context):
         t = time.time()
-        
+
         o = context.active_object
-        
-        if(USE_PY_EXPORT):
+
+        if USE_PY_EXPORT:
             log("WARNING: cython module not found, using python implementation")
             d = {'context': context,
                  'o': o,
@@ -677,23 +670,21 @@ class ExportFastOBJ(Operator, ExportHelper):
                  'global_scale': self.global_scale,
                  'precision': self.precision, }
             w = FastOBJWriter(**d)
-            
-            log("completed in {}.".format(datetime.timedelta(seconds=time.time() - t)))
+
+            log(f"completed in {datetime.timedelta(seconds=time.time() - t)}.")
             return {'FINISHED'}
-        
-        log("{}:".format(self.__class__.__name__), 0, )
-        log("using Cython module: {}".format(not USE_PY_EXPORT), 1)
-        log("will write .obj at: {}".format(self.filepath), 1)
-        
+
+        log(f"{self.__class__.__name__}:", 0)
+        log(f"using Cython module: {not USE_PY_EXPORT}", 1)
+        log(f"will write .obj at: {self.filepath}", 1)
+
         owner = None
-        if(self.apply_modifiers and o.modifiers):
+        if (self.apply_modifiers and o.modifiers):
             depsgraph = context.evaluated_depsgraph_get()
             owner = o.evaluated_get(depsgraph)
-            m = owner.to_mesh()
         else:
             owner = o
-            m = owner.to_mesh()
-        
+        m = owner.to_mesh()
         if(self.apply_transformation):
             mw = o.matrix_world.copy()
             m.transform(mw)
@@ -711,28 +702,29 @@ class ExportFastOBJ(Operator, ExportHelper):
         if(self.global_scale != 1.0):
             sm = Matrix.Scale(self.global_scale, 4)
             m.transform(sm)
-        
+
         has_uv = self.use_uv
-        if(has_uv):
-            if(not len(m.uv_layers)):
-                has_uv = False
+        if has_uv and (not len(m.uv_layers)):
+            has_uv = False
         has_vcols = self.use_vcols
-        if(has_vcols):
-            if(not len(m.vertex_colors)):
-                has_vcols = False
-        
-        export_obj.export_obj(m.as_pointer(),
-                              self.filepath,
-                              "{}-{}".format(o.name, o.data.name),
-                              use_normals=self.use_normals,
-                              use_uv=has_uv,
-                              use_vcols=has_vcols,
-                              precision=self.precision,
-                              debug=DEBUG, )
-        
+        if has_vcols and (not len(m.vertex_colors)):
+            has_vcols = False
+
+        export_obj.export_obj(
+            m.as_pointer(),
+            self.filepath,
+            f"{o.name}-{o.data.name}",
+            use_normals=self.use_normals,
+            use_uv=has_uv,
+            use_vcols=has_vcols,
+            precision=self.precision,
+            debug=DEBUG,
+        )
+
+
         owner.to_mesh_clear()
-        
-        log("completed in {}.".format(datetime.timedelta(seconds=time.time() - t)))
+
+        log(f"completed in {datetime.timedelta(seconds=time.time() - t)}.")
         return {'FINISHED'}
 
 
@@ -751,14 +743,12 @@ class ImportFastOBJ(Operator, ImportHelper):
     with_uv: BoolProperty(name="With UV", default=True, description="Import texture coordinates.", )
     
     def vcol_update_mrgb(self, context):
-        if(self.with_vertex_colors_mrgb):
-            if(self.with_vertex_colors_extended):
-                self.with_vertex_colors_extended = False
+        if self.with_vertex_colors_mrgb and self.with_vertex_colors_extended:
+            self.with_vertex_colors_extended = False
     
     def vcol_update_ext(self, context):
-        if(self.with_vertex_colors_extended):
-            if(self.with_vertex_colors_mrgb):
-                self.with_vertex_colors_mrgb = False
+        if self.with_vertex_colors_extended and self.with_vertex_colors_mrgb:
+            self.with_vertex_colors_mrgb = False
     
     with_vertex_colors_mrgb: BoolProperty(name="With Vertex Colors (#MRGB)", default=True, description="Import vertex colors, this is not part of official file format specification. ZBrush uses MRGB comments to write Polypaint to OBJ.", update=vcol_update_mrgb, )
     with_vertex_colors_extended: BoolProperty(name="With Vertex Colors (x,y,z,r,g,b)", default=False, description="Import vertex colors in 'extended' format where vertex is defined as (x, y, z, r, g, b), this is not part of official file format specification.", update=vcol_update_ext, )
@@ -819,11 +809,11 @@ class ImportFastOBJ(Operator, ImportHelper):
     
     def execute(self, context):
         t = time.time()
-        
-        vcols = False
-        if(self.with_vertex_colors_mrgb or self.with_vertex_colors_extended):
-            vcols = True
-        
+
+        vcols = bool(
+            (self.with_vertex_colors_mrgb or self.with_vertex_colors_extended)
+        )
+
         d = {'path': self.filepath,
              'convert_axes': self.convert_axes,
              'with_uv': self.with_uv,
@@ -837,10 +827,10 @@ class ImportFastOBJ(Operator, ImportHelper):
              'global_scale': self.global_scale,
              'apply_conversion': self.apply_conversion, }
         r = FastOBJReader(**d)
-        
+
         d = datetime.timedelta(seconds=time.time() - t)
-        log("completed in {}.".format(d), 0)
-        
+        log(f"completed in {d}.", 0)
+
         return {'FINISHED'}
 
 

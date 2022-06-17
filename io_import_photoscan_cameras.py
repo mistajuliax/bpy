@@ -75,10 +75,14 @@ def add_object(name, data, ):
 
 
 def get_space3dview():
-    for a in bpy.context.screen.areas:
-        if(a.type == "VIEW_3D"):
-            return a.spaces[0]
-    return None
+    return next(
+        (
+            a.spaces[0]
+            for a in bpy.context.screen.areas
+            if (a.type == "VIEW_3D")
+        ),
+        None,
+    )
 
 
 def activate_object(obj):
@@ -91,16 +95,12 @@ def activate_object(obj):
 
 def switch_view_to_camera():
     s3dv = get_space3dview()
-    if(s3dv is not None):
-        if(s3dv.region_3d.view_perspective != 'CAMERA'):
-            s3dv.region_3d.view_perspective = 'CAMERA'
+    if (s3dv is not None) and (s3dv.region_3d.view_perspective != 'CAMERA'):
+        s3dv.region_3d.view_perspective = 'CAMERA'
 
 
 def camera_list(scene):
-    r = []
-    for o in scene.objects:
-        if(o.type == 'CAMERA'):
-            r.append(o)
+    r = [o for o in scene.objects if (o.type == 'CAMERA')]
     r.sort(key=lambda c: c.name)
     return r
 
@@ -140,10 +140,10 @@ class PSCSensor():
         self.id = int(xml.attrib["id"])
         self.label = xml.attrib["label"]
         self.type = xml.attrib["type"]
-        
+
         res = xml.find("resolution")
         self.resolution = {'width': int(res.attrib["width"]), 'height': int(res.attrib["height"]), }
-        
+
         props = xml.findall("property")
         self.props = {}
         for p in props:
@@ -161,7 +161,7 @@ class PSCSensor():
                 self.props[n] = v
             else:
                 log("PSCSensorData: unknown property name: {0} with value: {1}".format(n, v), 0, )
-        
+
         self.calibration = {}
         cals = xml.findall("calibration")
         for c in cals:
@@ -169,13 +169,13 @@ class PSCSensor():
             # this is when sensor is precalibrated.. if it is so, then use adjusted values
             if(c.attrib["class"] == "adjusted"):
                 cal = c
-        
+
         self.calibration['type'] = cal.attrib["type"]
         self.calibration['class'] = cal.attrib["class"]
-        
+
         cres = cal.find("resolution")
         self.calibration['resolution'] = {'width': int(cres.attrib["width"]), 'height': int(cres.attrib["height"]), }
-        
+
         # self.calibration['fx'] = float(cal.find("fx").text)
         # self.calibration['fy'] = float(cal.find("fy").text)
         self.calibration['f'] = float(cal.find("f").text)
@@ -184,37 +184,23 @@ class PSCSensor():
         # self.calibration['k1'] = float(cal.find("k1").text)
         # self.calibration['k2'] = float(cal.find("k2").text)
         # self.calibration['k3'] = float(cal.find("k3").text)
-        
+
         sw = 0
         sh = 0
         ver = 0
-        if(ver == 0):
+        if ver == 0:
             # sensor w/h: resolution * single pixel size
             sw = self.props['pixel_width'] * self.calibration['resolution']['width']
             sh = self.props['pixel_height'] * self.calibration['resolution']['height']
-            self.orientation = "HORIZONTAL"
-            if(sw < sh):
-                self.orientation = "VERTICAL"
+            self.orientation = "VERTICAL" if (sw < sh) else "HORIZONTAL"
             self.calibrated_sensor_width = sw
             self.calibrated_sensor_height = sh
-            
-        elif(ver == 1):
-            # # principal point (image center) position * pixel size * 2
-            # cx = self.calibration['cx'] * self.props['pixel_width'] * 2
-            # cy = self.calibration['cy'] * self.props['pixel_height'] * 2
-            # self.orientation = "HORIZONTAL"
-            # if(cx < cy):
-            #     self.orientation = "VERTICAL"
-            # self.calibrated_sensor_width = cx
-            # self.calibrated_sensor_height = cy
-            
-            pass
-            
-        else:
+
+        elif ver != 1:
             class SillyException(Exception):
                 pass
             raise SillyException("choose one")
-        
+
         # average fx and fy, average pw and ph
         # fx = self.calibration['fx']
         # fy = self.calibration['fy']
@@ -222,21 +208,21 @@ class PSCSensor():
         pw = self.props['pixel_width']
         ph = self.props['pixel_height']
         self.calibrated_focal_length = f * ((pw + ph) / 2)
-        
+
         self.principal_point_x = self.calibration['cx'] * self.props['pixel_width']
         self.principal_point_y = self.calibration['cy'] * self.props['pixel_height']
-        
+
         shift_x = ((self.calibrated_sensor_width / 2) - self.principal_point_x)
         shift_y = ((self.calibrated_sensor_height / 2) - self.principal_point_y)
-        
+
         self.shift_x_mm = shift_x
         self.shift_y_mm = shift_y
-        
+
         # make it normalized, shift_x: 1 in blender camera is positive horizontal offset: 1 * sensor_width, negative would be shift_x: -1
         # formula from teoplib.maths.map: vmin2 + (vmax2 - vmin2) * ((v - vmin1) / (vmax1 - vmin1))
         shift_x = shift_x / self.calibrated_sensor_width
         shift_y = shift_y / self.calibrated_sensor_height
-        
+
         # |                   <-|         |->         <-<-| |->->
         # * -x -y             * -x +y     * +x +y     * +x +y
         # . x y               . x -y      . -x y      . -x -y
@@ -247,7 +233,7 @@ class PSCSensor():
         # +---------------+   | *     |   | .     |   +-------o-------+
         #                     |       |   |       |
         #                     +-------+   +-------+
-        
+
         # i think there is no way how to correctly determine this. i just assume that when shooting horizontally i am holding camera in viewer up position,
         # when vertically i rotate camera to left, viewer is on left. it would be possible to get in from image metadata but, when i rotate image
         # and develop like that, it will have orientation value: "Horizontal (normal)", that's Fun! how cool is that! but i have to check it with raw files
@@ -258,22 +244,19 @@ class PSCSensor():
         #   horizontal cx, cy = +,+ = shift_x, shift_y = -,-
         #   vertical cx, cy = +,+ = shift_x, shift_y = +,-
         # we'll see if this is going to work..
-        
+
         sign_x = 1
-        if(self.principal_point_x < self.calibrated_sensor_width / 2):
-            sign_x = -1
-            if(self.orientation == 'VERTICAL'):
-                # see above..
-                sign_x = 1
+        if (self.principal_point_x < self.calibrated_sensor_width / 2):
+            sign_x = 1 if (self.orientation == 'VERTICAL') else -1
         sign_y = 1
         if(self.principal_point_y < self.calibrated_sensor_height / 2):
             sign_y = -1
-        
+
         self.shift_x = shift_x * sign_x
         self.shift_y = shift_y * sign_y
-        
+
         self.real_megapixels = self.calibration['resolution']['width'] * self.calibration['resolution']['height'] / 1e6
-        
+
         self._xml = xml
 
 
@@ -282,37 +265,31 @@ class PSCCamera():
         self.id = int(xml.attrib["id"])
         self.label = xml.attrib["label"]
         self.sensor_id = int(xml.attrib["sensor_id"])
-        
+
         # if(xml.attrib["enabled"] == "true"):
         #     self.enabled = True
         # else:
         #     self.enabled = False
         self.enabled = True
-        
+
         self.resolution = {"width": sensor.resolution['width'], "height": sensor.resolution['height'], }
-        
+
         try:
             t = xml.find("transform").text
             l = t.split(" ")
-            v = []
-            for i in range(len(l)):
-                v.append(float(l[i]))
-            m = []
-            i = 0
-            while(i < 16):
-                m.append(tuple([v[i], v[i + 1], v[i + 2], v[i + 3]]))
-                i += 4
+            v = [float(l[i]) for i in range(len(l))]
+            m = [(v[i], v[i + 1], v[i + 2], v[i + 3]) for i in range(0, 16, 4)]
             matrix = Matrix((m[0], m[1], m[2], m[3]))
             self.transform = t
         except Exception as e:
             matrix = Matrix()
             self.transform = None
             self.enabled = False
-        
+
         conversion_matrix = axis_conversion(from_forward='Z', from_up='-Y', to_forward='-Z', to_up='Y').to_4x4()
         # self.matrix = matrix * conversion_matrix
         self.matrix = matrix @ conversion_matrix
-        
+
         self._xml = xml
 
 
@@ -320,42 +297,38 @@ class PSCChunk():
     def __init__(self, xml, id):
         self.xml = xml
         self.id = id
-        
+
         self.sensors = []
         self.cameras = []
-        
+
         sens = self.xml.findall(".//sensor")
         for s in sens:
             sd = PSCSensor(s)
             self.sensors.append(sd)
-        
+
         self.cameras = []
         cams = self.xml.findall(".//camera")
         for c in cams:
             sensor = self.sensors[int(c.attrib["sensor_id"])]
             cam = PSCCamera(c, sensor)
             self.cameras.append(cam)
-        
+
         self.region = {}
         reg = self.xml.find(".//region")
-        
+
         c = reg.find("center").text.split(" ")
         cf = [float(v) for v in c]
         self.region['center'] = cf
-        
+
         s = reg.find("size").text.split(" ")
         sf = [float(v) for v in s]
         self.region['size'] = sf
-        
+
         r = reg.find("R").text.split(" ")
         rf = [float(v) for v in r]
-        m = []
-        i = 0
-        while(i < 9):
-            m.append(tuple([rf[i], rf[i + 1], rf[i + 2]]))
-            i += 3
+        m = [(rf[i], rf[i + 1], rf[i + 2]) for i in range(0, 9, 3)]
         matrix = Matrix((m[0], m[1], m[2]))
-        
+
         conversion_matrix = axis_conversion(from_forward='Z', from_up='-Y', to_forward='-Z', to_up='Y').to_3x3()
         matrix = matrix @ conversion_matrix
         self.region['R'] = matrix
@@ -418,65 +391,65 @@ class PSCMakeCameras():
         v = ms.inverted() @ l
         ds = v.x
         self.camera_draw_size_relative = ds
-        
+
         # prgr = Progress(len(cameras), 3)
-        
+
         camera_objects = []
-        
+
         for c in cameras:
             cnm = str(c.label).split(".")[0]
             bc = bpy.data.cameras.new(cnm)
-            
+
             bc.import_photoscan_cameras.include = True
             # bc.import_photoscan_cameras.image = c.label
-            
+
             bco = add_object(cnm, bc)
             bco.show_name = True
-            
+
             bc.lens_unit = 'MILLIMETERS'
             current_sensor = sensors[c.sensor_id]
             bc.lens = current_sensor.calibrated_focal_length
             bc.sensor_fit = current_sensor.orientation
-            
+
             bc.show_name = True
-            
+
             bc.sensor_width = current_sensor.calibrated_sensor_width
             bc.sensor_height = current_sensor.calibrated_sensor_height
-            
+
             if(self.correct_principal_point):
                 bc.shift_x = current_sensor.shift_x
                 bc.shift_y = current_sensor.shift_y
-            
+
             bc.display_size = self.camera_draw_size_relative
-            
+
             if(self.planes):
                 self._set_render_params(sensors[c.sensor_id])
-                
+
                 # how blender camera is drawn: when draw_size is 1.0, longer side of frame is 1 unit, how far from origin depends on focal length
                 # the distance is then calculated as: (draw_size / 2) / math.tan(camera.angle / 2)
                 camera_frame_distance = ((bc.display_size / 2) / math.tan(bc.angle / 2)) * 2
                 # lets add a bit to it
                 plane_distance = camera_frame_distance * 1.25
-                
+
                 ch = plane_distance * math.tan(bc.angle_y / 2)
                 cv = plane_distance * math.tan(bc.angle_x / 2)
-                
+
                 # 3-------------2
                 # |             |
                 # |      *      |
                 # |             |
                 # 0-------------1
-                
+
                 va = Vector((-cv, -ch, -plane_distance))
                 vb = Vector((cv, -ch, -plane_distance))
                 vc = Vector((cv, ch, -plane_distance))
                 vd = Vector((-cv, ch, -plane_distance))
                 verts = [va, vb, vc, vd]
-                
+
                 pnm = "{0}_image_plane".format(cnm)
                 me = bpy.data.meshes.new(pnm)
                 me.from_pydata(verts, [], [(0, 1, 2, 3)])
-                
+
                 uvnm = "UVMap"
                 # me.uv_textures.new(uvnm)
                 me.uv_layers.new(name=uvnm)
@@ -485,19 +458,19 @@ class PSCMakeCameras():
                 loops[1].uv = Vector((1.0, 0.0))
                 loops[2].uv = Vector((1.0, 1.0))
                 loops[3].uv = Vector((0.0, 1.0))
-                
+
                 meo = add_object(pnm, me)
                 meo.parent = bco
             else:
                 self._set_render_params(sensors[cameras[0].sensor_id])
-                
+
             bco.matrix_world = c.matrix
             bco.parent = empty
-            
+
             camera_objects.append(bco)
-            
+
             # prgr.step()
-        
+
         return camera_objects
     
     def _set_render_params(self, sensor):
@@ -510,7 +483,7 @@ class PSCMakeCameras():
         center = region["center"]
         size = region["size"]
         r = region["R"]
-        
+
         # 1 unit cube
         l = 1.0 / 2
         dv = [(+l, +l, -l),
@@ -527,24 +500,24 @@ class PSCMakeCameras():
               (1, 5, 6, 2),
               (2, 6, 7, 3),
               (4, 0, 3, 7), ]
-        
+
         me = bpy.data.meshes.new("{0}_region".format(id))
         me.from_pydata(dv, [], df)
-        
+
         conversion_matrix = axis_conversion(from_forward='Z', from_up='-Y', to_forward='-Z', to_up='Y').to_4x4()
-        
+
         o = add_object("{0}_region".format(id), me)
-        
+
         mt = Matrix.Translation(Vector(center)).to_4x4()
         mr = Matrix(r.to_4x4() @ conversion_matrix).inverted()
         ms = Matrix(((size[0], 0, 0), (0, size[1], 0), (0, 0, size[2]), )).to_4x4()
         m = mt @ mr @ ms
-        
+
         o.matrix_world = m
-        
+
         o.parent = empty
         o.display_type = 'WIRE'
-        
+
         # delete faces, why are they even created? because i am lazy
         me = o.data
         bm = bmesh.new()
@@ -555,7 +528,7 @@ class PSCMakeCameras():
         # bmesh.ops.delete(bm, geom=bm.faces, context='FACES', )
         bmesh.ops.delete(bm, geom=bm.faces, context='FACES_ONLY', )
         o.data = bm.to_mesh(me)
-        
+
         return o
 
 
@@ -916,35 +889,27 @@ class PSC_OT_next_camera(Operator):
         ao = context.active_object
         mode = ao.mode
         bpy.ops.object.mode_set(mode='OBJECT')
-        
+
         cams = camera_list(context.scene)
         current = context.scene.camera
-        
-        found = False
-        for i, c in enumerate(cams):
-            if(c == current):
-                found = True
-                break
-        if(found):
-            if(i == len(cams) - 1):
-                i = 0
-            else:
-                i += 1
-        else:
+
+        found = next((True for c in cams if (c == current)), False)
+        if found and (i == len(cams) - 1) or not found:
             i = 0
-        
+        else:
+            i += 1
         # print(cams[i].data.import_photoscan_cameras.include)
         # print(cams[i].data.import_photoscan_cameras.image)
-        
+
         activate_object(cams[i])
         context.scene.camera = cams[i]
         switch_orientation(cams[i])
         # show_background_image(cams[i].name)
         switch_view_to_camera()
-        
+
         activate_object(ao)
         bpy.ops.object.mode_set(mode=mode)
-        
+
         return {'FINISHED'}
 
 
@@ -963,32 +928,27 @@ class PSC_OT_prev_camera(Operator):
         ao = context.active_object
         mode = ao.mode
         bpy.ops.object.mode_set(mode='OBJECT')
-        
+
         cams = camera_list(context.scene)
         current = context.scene.camera
-        
-        found = False
-        for i, c in enumerate(cams):
-            if(c == current):
-                found = True
-                break
-        if(found):
+
+        if found := next((True for c in cams if (c == current)), False):
             if(i == 0):
                 i = len(cams) - 1
             else:
                 i -= 1
         else:
             i = 0
-        
+
         activate_object(cams[i])
         context.scene.camera = cams[i]
         switch_orientation(cams[i])
         # show_background_image(cams[i].name)
         switch_view_to_camera()
-        
+
         activate_object(ao)
         bpy.ops.object.mode_set(mode=mode)
-        
+
         return {'FINISHED'}
 
 
@@ -1006,12 +966,14 @@ class PSC_PT_import_panel(SceneButtonsPanel, Panel):
         sub = l.column()
         
         def prop_name(cls, prop, colon=False, ):
-            for p in cls.bl_rna.properties:
-                if(p.identifier == prop):
-                    if(colon):
-                        return "{}:".format(p.name)
-                    return p.name
-            return ''
+            return next(
+                (
+                    f"{p.name}:" if colon else p.name
+                    for p in cls.bl_rna.properties
+                    if (p.identifier == prop)
+                ),
+                '',
+            )
         
         f = 0.33
         r = sub.row(align=True, )

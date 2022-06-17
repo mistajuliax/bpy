@@ -128,23 +128,13 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
     linked = []
     
     def get_neighbours(v):
-        r = []
-        for le in v.link_edges:
-            # a = le.verts[0]
-            # b = le.verts[1]
-            # if(a == v):
-            #     r.append(b)
-            # else:
-            #     r.append(a)
-            # hmm, better to read docs thoroughly, didn't know about this until now..
-            r.append(le.other_vert(v))
-        return r
+        return [le.other_vert(v) for le in v.link_edges]
     
     # changed to iteration, it is a bit slow i think, searching for element in list twice in row and removing from list by value..
     def walk(v, linked):
         ok = True
         other = [v, ]
-        while(ok):
+        while ok:
             v = other[0]
             linked.append(v)
             other.remove(v)
@@ -152,7 +142,7 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
             for n in ns:
                 if(n not in linked and n not in other):
                     other.append(n)
-            if(len(other) == 0):
+            if not other:
                 ok = False
     
     walk(active2, linked)
@@ -162,9 +152,7 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
     
     def get_seam_and_rings(vert):
         def decide_direction(v, a, b, ):
-            if(flip):
-                return b
-            return a
+            return b if flip else a
         
         # get ring from active vertex around selection edge
         def get_boundary_edge_loop(vert):
@@ -176,32 +164,25 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
                 for i, e in enumerate(le):
                     a = e.verts[0]
                     b = e.verts[1]
-                    if(v == a):
-                        if(b.select):
-                            stats[i] = True
-                    else:
-                        if(a.select):
-                            stats[i] = True
+                    if (v == a) and b.select or v != a and a.select:
+                        stats[i] = True
                 if(sum(stats) != len(stats) - 1):
                     return False
                 return True
             
             def get_next_boundary_vertices(vert):
                 lf = vert.link_faces
-                fs = []
-                for f in lf:
-                    if(f.select):
-                        fs.append(f)
+                fs = [f for f in lf if f.select]
                 if(len(fs) != 2):
                     raise SelectionError("Selection is not continuous. Select all rings you want to unwrap without gaps.")
                 fa = fs[0]
                 fb = fs[1]
                 a = None
                 b = None
-                for i, v in enumerate(fa.verts):
+                for v in fa.verts:
                     if(is_boundary(v) and v is not vert):
                         a = v
-                for i, v in enumerate(fb.verts):
+                for v in fb.verts:
                     if(is_boundary(v) and v is not vert):
                         b = v
                 return a, b
@@ -214,16 +195,13 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
                     # path = walk_verts(a, path)
                     nv = decide_direction(v, a, b)
                     path = walk_verts(nv, path)
-                if(a in path):
+                if (a in path):
                     if(b not in path):
                         path = walk_verts(b, path)
                     else:
                         return path
-                elif(b in path):
-                    if(a not in path):
-                        path = walk_verts(a, path)
-                    else:
-                        return path
+                elif b in path:
+                    path = walk_verts(a, path)
                 # else:
                 #     raise UnsuitableMeshError("Selection with only two rings both boundary detected. Add a loop cut between or select more loops in order to make unwrap work.")
                 return path
@@ -241,8 +219,7 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
                 vs = []
                 for e in le:
                     vs.extend(e.verts)
-                r = [v for v in vs if v is not vert]
-                return r
+                return [v for v in vs if v is not vert]
             
             def walk_verts(v, path):
                 path.append(v)
@@ -252,16 +229,13 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
                     # path = walk_verts(a, path)
                     nv = decide_direction(v, a, b)
                     path = walk_verts(nv, path)
-                if(a in path):
+                if (a in path):
                     if(b not in path):
                         path = walk_verts(b, path)
                     else:
                         return path
-                elif(b in path):
-                    if(a not in path):
-                        path = walk_verts(a, path)
-                    else:
-                        return path
+                elif b in path:
+                    path = walk_verts(a, path)
                 return path
             
             ring = walk_verts(vert, [])
@@ -309,9 +283,16 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
             for v in prev_ring:
                 le = v.link_edges
                 for e in le:
-                    for v in e.verts:
-                        if(v not in prev_ring and is_in_rings(v, rings) is False and v.select):
-                            nr.append(v)
+                    nr.extend(
+                        v
+                        for v in e.verts
+                        if (
+                            v not in prev_ring
+                            and is_in_rings(v, rings) is False
+                            and v.select
+                        )
+                    )
+
             return nr
         
         rings = [boundary_ring, ]
@@ -354,10 +335,7 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
     # sum all ring edges lengths
     def calc_circumference(r):
         def get_edge(av, bv):
-            for e in bm2.edges:
-                if(av in e.verts and bv in e.verts):
-                    return e
-            return None
+            return next((e for e in bm2.edges if (av in e.verts and bv in e.verts)), None)
         
         l = 0
         for i in range(len(r)):
@@ -370,11 +348,9 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
     
     # ideal uv layout width and height, and scale_ratio to fit
     def calc_sizes(rings, seam_length, seam):
-        ac = 0
-        for r in rings:
-            ac += calc_circumference(r)
+        ac = sum(calc_circumference(r) for r in rings)
         ac = ac / len(rings)
-        
+
         if(ac > seam_length):
             scale_ratio = 1 / ac
             w = 0
@@ -392,8 +368,7 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
         uvs = bm.loops.layers.uv
         if(uvs.active is None):
             uvs.new(name)
-        uv_lay = uvs.active
-        return uv_lay
+        return uvs.active
     
     uv_lay = make_uvmap(bm, "UVMap")
     
@@ -411,10 +386,7 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
     # make uv, scale it correctly
     def make_uvs(uv_lay, scale_ratio, w, h, rings, seam, ):
         def get_edge(av, bv):
-            for e in bm.edges:
-                if(av in e.verts and bv in e.verts):
-                    return e
-            return None
+            return next((e for e in bm.edges if (av in e.verts and bv in e.verts)), None)
         
         def get_face(verts):
             a = set(verts[0].link_faces)
@@ -423,10 +395,8 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
         
         def get_face_loops(f, vo):
             lo = []
-            for i, v in enumerate(vo):
-                for j, l in enumerate(f.loops):
-                    if(l.vert == v):
-                        lo.append(j)
+            for v in vo:
+                lo.extend(j for j, l in enumerate(f.loops) if (l.vert == v))
             return lo
         
         x = 0
@@ -504,10 +474,7 @@ def tube_unwrap(operator, context, mark_seams, flip, ):
     # mark seams, both boundary rings and seam between them
     if(mark_seams):
         def get_edge(av, bv):
-            for e in bm.edges:
-                if(av in e.verts and bv in e.verts):
-                    return e
-            return None
+            return next((e for e in bm.edges if (av in e.verts and bv in e.verts)), None)
         
         def mark_seam(seam):
             for i, v in enumerate(seam):
@@ -559,10 +526,10 @@ class TUVUW_OT_tube_uv_unwrap(Operator):
     
     def execute(self, context):
         r = False
-        
+
         import traceback
         print_errors = False
-        
+
         try:
             r = tube_unwrap(self, context, self.mark_seams, self.flip, )
         except UnsuitableMeshError as e:

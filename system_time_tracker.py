@@ -89,8 +89,7 @@ class Utils():
     @staticmethod
     def get_preferences():
         a = os.path.splitext(os.path.split(os.path.realpath(__file__))[1])[0]
-        p = bpy.context.preferences.addons[a].preferences
-        return p
+        return bpy.context.preferences.addons[a].preferences
     
     @staticmethod
     def find_handlers():
@@ -196,42 +195,42 @@ def summary():
 
 def update(self, context):
     prefs = Utils.get_preferences()
-    
+
     current = prefs.csv_path
     previous = prefs.previous_csv_path
-    
+
     if(current == previous):
         # no change
         return
-    
+
     # remove message at this point. earlier will not be visible
     Runtime.path_message = ""
-    
+
     if(current == ""):
         # no path, use default
         current = Utils.get_default_csv_path()
-    
+
     if(os.path.isdir(current)):
         # is directory, add default file name
         current = os.path.join(current, os.path.split(Utils.get_default_csv_path())[1])
-    
+
     # add correct extension
     current = bpy.path.ensure_ext(current, ".csv", case_sensitive=True, )
-    
+
     # check if directory is writeable
     d = os.path.split(current)[0]
     if(not os.access(d, os.W_OK)):
         # if not, put default path and write message
         current = Utils.get_default_csv_path()
         Runtime.path_message = "Location '{0}' is not writable.".format(d)
-    
+
     # check if path has changed, and if so, write previous .csv to it if there is none (if it exists too)
     if(current != previous and not os.path.exists(current) and os.path.exists(previous)):
         with open(current, mode='w', encoding='utf-8') as f:
             with open(previous, encoding='utf-8') as o:
                 c = "".join(o.readlines())
             f.write(c)
-    
+
     prefs.previous_csv_path = current
     # update after previous path to prevent recursion
     prefs.csv_path = current
@@ -243,14 +242,13 @@ def scene_update_update(self, context):
     Runtime.update_step = prefs.update_interval
     # force summary update
     Runtime.summary = None
-    if(prefs.scene_update):
+    h = bpy.app.handlers
+    if prefs.scene_update:
         _, _, u = Utils.find_handlers()
-        h = bpy.app.handlers
         if(u == -1):
             h.depsgraph_update_post.append(TIME_TRACKER_update_handler)
     else:
         _, _, u = Utils.find_handlers()
-        h = bpy.app.handlers
         if(u != -1):
             del h.depsgraph_update_post[u]
 
@@ -329,17 +327,17 @@ class TIME_TRACKER_OT_show_project_directory(Operator):
         if(not os.path.exists(d)):
             self.report({'ERROR'}, "The directory {0} does not exist.".format(d))
             return {'FINISHED'}
-        
+
         p = platform.system()
-        if(p == 'Windows'):
+        if (p == 'Windows'):
             os.startfile(os.path.normpath(d))
         elif(p == 'Darwin'):
             subprocess.Popen(['open', d], )
         elif(p == 'Linux'):
             subprocess.Popen(['xdg-open', d], )
         else:
-            raise OSError("Unknown platform: {}.".format(p))
-        
+            raise OSError(f"Unknown platform: {p}.")
+
         return {'FINISHED'}
 
 
@@ -365,21 +363,21 @@ class TIME_TRACKER_OT_open_csv(Operator):
     def execute(self, context):
         prefs = Utils.get_preferences()
         csv = prefs.csv_path
-        
-        if(not os.path.exists(csv)):
-            self.report({'ERROR'}, "No such file: {}".format(csv))
+
+        if (not os.path.exists(csv)):
+            self.report({'ERROR'}, f"No such file: {csv}")
             return {'FINISHED'}
-        
+
         p = platform.system()
-        if(p == 'Windows'):
+        if (p == 'Windows'):
             os.startfile(os.path.normpath(csv))
         elif(p == 'Darwin'):
             subprocess.Popen(['open', csv], )
         elif(p == 'Linux'):
             subprocess.Popen(['xdg-open', csv], )
         else:
-            raise OSError("Unknown platform: {}.".format(csv))
-        
+            raise OSError(f"Unknown platform: {csv}.")
+
         return {'FINISHED'}
 
 
@@ -404,15 +402,15 @@ def TIME_TRACKER_update_handler(null):
 
 def start():
     log("start")
-    
+
     prefs = Utils.get_preferences()
     p = prefs.csv_path
-    
+
     # write starting csv if there is none
     if(not os.path.exists(p)):
         with open(p, mode='w', encoding='utf-8') as f:
             f.write("{0}\n".format(prefs.csv_first_line))
-    
+
     # set handlers
     l, s, u = Utils.find_handlers()
     h = bpy.app.handlers
@@ -420,9 +418,8 @@ def start():
         h.load_post.append(TIME_TRACKER_load_handler)
     if(s == -1):
         h.save_post.append(TIME_TRACKER_save_handler)
-    if(prefs.scene_update):
-        if(u == -1):
-            h.depsgraph_update_post.append(TIME_TRACKER_update_handler)
+    if prefs.scene_update and (u == -1):
+        h.depsgraph_update_post.append(TIME_TRACKER_update_handler)
 
 
 def track(e):
@@ -467,18 +464,18 @@ class TIME_TRACKER_PT_panel(Panel):
         prefs = Utils.get_preferences()
         l = self.layout
         l.prop(prefs, 'enabled', toggle=True, text='Enabled', )
-        
-        if(DEBUG):
+
+        if DEBUG:
             l.separator()
             c = l.column()
-            c.label(text="start: {}".format(Runtime.start))
-            c.label(text="path_message: {}".format(Runtime.path_message))
-            c.label(text="summary_message: {}".format(Runtime.summary_message))
-            c.label(text="modified: {}".format(Runtime.modified))
-            c.label(text="summary: {}".format(Runtime.summary))
-            c.label(text="level: {}".format(Runtime.level))
-            c.label(text="update_last: {}".format(Runtime.update_last))
-            c.label(text="update_step: {}".format(Runtime.update_step))
+            c.label(text=f"start: {Runtime.start}")
+            c.label(text=f"path_message: {Runtime.path_message}")
+            c.label(text=f"summary_message: {Runtime.summary_message}")
+            c.label(text=f"modified: {Runtime.modified}")
+            c.label(text=f"summary: {Runtime.summary}")
+            c.label(text=f"level: {Runtime.level}")
+            c.label(text=f"update_last: {Runtime.update_last}")
+            c.label(text=f"update_step: {Runtime.update_step}")
             c.scale_y = 0.5
 
 
